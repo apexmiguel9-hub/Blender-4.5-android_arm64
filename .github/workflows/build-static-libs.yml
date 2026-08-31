@@ -1,0 +1,417 @@
+name: Build Blender 4.5 Android ARM64 Static Libs
+
+on:
+  push:
+    branches: [main, blender-v4.5-release]
+  pull_request:
+    branches: [main, blender-v4.5-release]
+  workflow_dispatch:
+
+env:
+  NDK_VERSION: "r26d"
+  NDK_URL: "https://dl.google.com/android/repository/android-ndk-r26d-linux.zip"
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  LIBS_REPO: "apexmiguel9-hub/libs-blender-4.5_arm64"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout Blender source
+        uses: actions/checkout@v4
+        with:
+          repository: blender/blender
+          ref: blender-v4.5-release
+          path: blender
+          fetch-depth: 1
+
+      - name: Checkout this repo (workflow + patches)
+        uses: actions/checkout@v4
+        with:
+          path: blender-android
+
+      - name: Restore precompiled libraries
+        uses: actions/cache/restore@v4
+        id: libs-restore
+        with:
+          path: ${{ github.workspace }}/libs
+          key: libs-blender-4.5-${{ runner.os }}
+
+      - name: Download precompiled libraries
+        if: steps.libs-restore.outputs.cache-hit != 'true'
+        run: |
+          echo "Cloning precompiled Android ARM64 libraries..."
+          git clone --depth 1 https://github.com/${{ env.LIBS_REPO }}.git \
+            ${{ github.workspace }}/libs
+
+      - name: Save precompiled libraries cache
+        if: steps.libs-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/libs
+          key: libs-blender-4.5-${{ runner.os }}
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        id: ccache-restore
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-blender45-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ccache-blender45-${{ runner.os }}-
+
+      - name: Download and extract NDK r26d
+        run: |
+          NDK_DIR="$HOME/android-ndk-r26d"
+          if [ ! -d "$NDK_DIR" ]; then
+            echo "Downloading NDK r26d..."
+            wget -q "${{ env.NDK_URL }}" -O /tmp/ndk.zip
+            echo "Extracting NDK..."
+            unzip -q /tmp/ndk.zip -d "$HOME/"
+            rm /tmp/ndk.zip
+            echo "NDK r26d extracted to $NDK_DIR"
+          fi
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          ls "$NDK_DIR/ndk-build" && echo "NDK ready"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build ccache \
+            libpng-dev zlib1g-dev \
+            python3-dev libpython3-dev \
+            libavformat-dev libavcodec-dev libavdevice-dev \
+            libavutil-dev libswscale-dev libswresample-dev \
+            libopenal-dev libsdl2-dev \
+            libjack-jackd2-dev libpulse-dev \
+            libopenexr-dev libtiff-dev libjpeg-dev \
+            libopenjp2-7-dev \
+            libbullet-dev libfftw3-dev libgmp-dev \
+            libtbb-dev libpotrace-dev \
+            libwayland-dev wayland-protocols \
+            libhpdf-dev liblzo2-dev \
+            libboost-all-dev \
+            libgl1-mesa-dev libglu1-mesa-dev
+
+      - name: Patch hardcoded paths in cmake modules
+        run: |
+          LIBS_PATH="${{ github.workspace }}/libs"
+          LIBS_ABS="$(cd "$LIBS_PATH" && pwd)"
+
+          echo "=== Patching lib paths -> $LIBS_ABS ==="
+          # Patch Find modules to use our libs directory
+          find "${{ github.workspace }}/blender/build_files/cmake/" -type f -name "*.cmake" \
+            -exec sed -i "s|LIBDIR/|${LIBS_ABS}/|g" {} + 2>/dev/null || true
+
+          echo "=== Patching done ==="
+
+      - name: Phase 1 - Build host tools natively
+        run: |
+          GITROOT="${{ github.workspace }}/blender"
+          HOST_TOOLS="${{ github.workspace }}/build/host_tools"
+          mkdir -p "$HOST_TOOLS"
+
+          # datatoc
+          gcc -O2 -o "$HOST_TOOLS/datatoc" \
+            "$GITROOT/source/blender/datatoc/datatoc.c" -lm
+          echo "datatoc built"
+
+          # glsl_preprocess (NEW in 4.5)
+          if [ -f "$GITROOT/source/blender/gpu/intern/gpu_shader_preprocess.cc" ]; then
+            g++ -std=c++20 -O2 -o "$HOST_TOOLS/glsl_preprocess" \
+              "$GITROOT/source/blender/gpu/intern/gpu_shader_preprocess.cc" -lm && \
+              echo "glsl_preprocess built" || \
+              echo "Warning: glsl_preprocess build failed"
+          else
+            echo "glsl_preprocess source not found, skipping"
+          fi
+
+      - name: Phase 2 - Build and run makesdna host tool
+        run: |
+          GITROOT="${{ github.workspace }}/blender"
+          DNA_INC_DIR="$GITROOT/source/blender/makesdna"
+          DNA_GEN_DIR="${{ github.workspace }}/build/host_dna_gen"
+          mkdir -p "$DNA_GEN_DIR"
+
+          # Generate includes list
+          DNA_HDR_LIST=$(sed -n 's/.*makesdna\/\(DNA_[a-zA-Z0-9_]*\.h\).*/\1/p' \
+            "$GITROOT/source/blender/CMakeLists.txt" | head -90)
+          {
+            echo "/* Do not edit manually */"
+            echo "$DNA_HDR_LIST" | while IFS= read -r hdr; do echo "#include \"$hdr\""; done
+          } > "$DNA_GEN_DIR/dna_includes_all.h"
+          {
+            echo "/* Do not edit manually */"
+            echo "$DNA_HDR_LIST" | while IFS= read -r hdr; do echo "\"$hdr\","; done
+          } > "$DNA_GEN_DIR/dna_includes_as_strings.h"
+          echo "dna_includes headers generated"
+
+          CFLAGS="-O2 -I$DNA_INC_DIR -I$GITROOT/source/blender/blenlib \
+            -I$GITROOT/intern/atomic -I$GITROOT/intern/guardedalloc -I$DNA_GEN_DIR"
+
+          gcc $CFLAGS -c -o /tmp/ms_main.o  "$DNA_INC_DIR/intern/makesdna.c"
+          gcc $CFLAGS -c -o /tmp/ms_utils.o "$DNA_INC_DIR/intern/dna_utils.c"
+          gcc $CFLAGS -c -o /tmp/ms_asrt.o "$GITROOT/source/blender/blenlib/intern/BLI_assert.c"
+          gcc $CFLAGS -c -o /tmp/ms_ghash.o "$GITROOT/source/blender/blenlib/intern/BLI_ghash.c"
+          gcc $CFLAGS -c -o /tmp/ms_gh2.o  "$GITROOT/source/blender/blenlib/intern/BLI_ghash_utils.c"
+          gcc $CFLAGS -c -o /tmp/ms_mema.o "$GITROOT/source/blender/blenlib/intern/BLI_memarena.c"
+          gcc $CFLAGS -c -o /tmp/ms_memp.o "$GITROOT/source/blender/blenlib/intern/BLI_mempool.c"
+          gcc $CFLAGS -c -o /tmp/ms_hash.o "$GITROOT/source/blender/blenlib/intern/hash_mm2a.c"
+          gcc $CFLAGS -c -o /tmp/ms_ml1.o "$GITROOT/intern/guardedalloc/intern/mallocn.c"
+          gcc $CFLAGS -c -o /tmp/ms_ml2.o "$GITROOT/intern/guardedalloc/intern/mallocn_guarded_impl.c"
+          gcc $CFLAGS -c -o /tmp/ms_ml3.o "$GITROOT/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
+          g++ $CFLAGS -c -o /tmp/ms_leak.o "$GITROOT/intern/guardedalloc/intern/leak_detector.cc"
+          g++ $CFLAGS -c -o /tmp/ms_mem.o  "$GITROOT/intern/guardedalloc/intern/memory_usage.cc"
+
+          g++ -o /tmp/makesdna \
+            /tmp/ms_main.o /tmp/ms_utils.o /tmp/ms_asrt.o /tmp/ms_ghash.o \
+            /tmp/ms_gh2.o /tmp/ms_mema.o /tmp/ms_memp.o /tmp/ms_hash.o \
+            /tmp/ms_ml1.o /tmp/ms_ml2.o /tmp/ms_ml3.o \
+            /tmp/ms_leak.o /tmp/ms_mem.o \
+            -lm -lpthread
+          echo "makesdna compiled"
+
+          /tmp/makesdna \
+            "$DNA_GEN_DIR/dna.c" \
+            "$DNA_GEN_DIR/dna_type_offsets.h" \
+            "$DNA_GEN_DIR/dna_verify.c" \
+            "$DNA_INC_DIR/"
+          echo "DNA files generated"
+
+          HOST_TOOLS="${{ github.workspace }}/build/host_tools"
+          cp /tmp/makesdna "$HOST_TOOLS/makesdna"
+          cp "$DNA_GEN_DIR/dna_includes_all.h" "$DNA_GEN_DIR/dna_includes_as_strings.h" \
+            "$DNA_GEN_DIR/dna.c" "$DNA_GEN_DIR/dna_type_offsets.h" "$DNA_GEN_DIR/dna_verify.c" \
+            "$HOST_TOOLS/"
+
+      - name: Phase 3 - Configure CMake for makesrna
+        run: |
+          GITROOT="${{ github.workspace }}/blender"
+          LIB_DIR="${{ github.workspace }}/libs"
+
+          cmake -B "${{ github.workspace }}/build_host" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLIB_DIR="${LIB_DIR}" \
+            -DWITH_BLENDER=ON \
+            -DWITH_PYTHON=ON \
+            -DWITH_INTERNATIONAL=ON \
+            -DWITH_CODEC_FFMPEG=ON \
+            -DWITH_OPENAL=ON \
+            -DWITH_SDL=OFF \
+            -DWITH_GHOST_X11=OFF \
+            -DWITH_GHOST_WAYLAND=ON \
+            -DWITH_GHOST_WAYLAND_DYNLOAD=OFF \
+            -DWITH_JACK=OFF \
+            -DWITH_PULSEAUDIO=OFF \
+            -DWITH_OPENCOLLADA=ON \
+            -DWITH_OPENSUBDIV=ON \
+            -DWITH_OPENVDB=ON \
+            -DWITH_NANOVDB=ON \
+            -DWITH_ALEMBIC=ON \
+            -DWITH_USD=ON \
+            -DWITH_CYCLES=ON \
+            -DWITH_CYCLES_OSL=OFF \
+            -DWITH_CYCLES_EMBREE=ON \
+            -DWITH_TBB=ON \
+            -DWITH_OPENIMAGEDENOISE=ON \
+            -DWITH_FFTW3=ON \
+            -DWITH_GMP=ON \
+            -DWITH_POTRACE=ON \
+            -DWITH_GTESTS=OFF \
+            -DWITH_VULKAN_BACKEND=OFF \
+            -DWITH_BUILDINFO=OFF \
+            -DWITH_BULLET=ON \
+            -DWITH_AUDASPACE=OFF \
+            -DWITH_MOD_FLUID=ON \
+            -DWITH_FREESTYLE=ON \
+            -DWITH_IMAGE_OPENEXR=ON \
+            -DWITH_IMAGE_CINEON=OFF \
+            -DWITH_IMAGE_TIFF=ON \
+            -DWITH_IMAGE_JPEG=ON \
+            -DWITH_IMAGE_PNG=ON \
+            -DWITH_MOD_OCEANSIM=OFF \
+            -DWITH_MOD_REMESH=ON \
+            -DWITH_XR_OPENXR=OFF \
+            -DWITH_MEM_VALGRIND=OFF \
+            -DWITH_HARU=ON \
+            -DWITH_LZO=ON \
+            -DWITH_LLVM=OFF \
+            -DWITH_INSTALL_PORTABLE=ON \
+            2>&1 | tail -30
+          echo "Native CMake configured"
+
+      - name: Phase 4 - Build and run makesrna
+        run: |
+          GITROOT="${{ github.workspace }}/blender"
+          ninja -C "${{ github.workspace }}/build_host" bf_dna 2>&1 | tail -10
+          ninja -C "${{ github.workspace }}/build_host" bf_dna_blenlib 2>&1 | tail -10
+          ninja -C "${{ github.workspace }}/build_host" makesrna 2>&1 | tail -10
+
+          RNA_GEN_DIR="${{ github.workspace }}/build_host/source/blender/makesrna/intern"
+          HOST_TOOLS="${{ github.workspace }}/build/host_tools"
+          cp "${{ github.workspace }}/build_host/lib/libmakesrna.a" "$HOST_TOOLS/" 2>/dev/null || true
+          cp "${{ github.workspace }}/build_host/lib/libbf_dna.a" "$HOST_TOOLS/" 2>/dev/null || true
+          cp "${{ github.workspace }}/build_host/lib/libbf_dna_blenlib.a" "$HOST_TOOLS/" 2>/dev/null || true
+
+          # Link makesrna
+          g++ -o /tmp/makesrna \
+            -Wl,--start-group \
+            "$HOST_TOOLS/libbf_dna.a" \
+            "$HOST_TOOLS/libbf_dna_blenlib.a" \
+            "$HOST_TOOLS/libmakesrna.a" \
+            -Wl,--end-group \
+            -lm -lpthread
+          /tmp/makesrna "$RNA_GEN_DIR/" "${{ github.workspace }}/build_host/source/blender/makesrna/"
+          echo "makesrna ran"
+
+          cp "$RNA_GEN_DIR"/*.c "$RNA_GEN_DIR"/*.h "$HOST_TOOLS/" 2>/dev/null || true
+          cp /tmp/makesrna "$HOST_TOOLS/makesrna"
+
+      - name: Phase 5 - Configure CMake for cross-compile
+        run: |
+          GITROOT="${{ github.workspace }}/blender"
+          LIB_DIR="${{ github.workspace }}/libs"
+          NDK_DIR="${{ env.ANDROID_NDK_HOME }}"
+          HOST_TOOLS="${{ github.workspace }}/build/host_tools"
+
+          cmake -B "${{ github.workspace }}/build" \
+            -G "Ninja" \
+            -DCMAKE_TOOLCHAIN_FILE="${NDK_DIR}/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="-fvisibility=default" \
+            -DCMAKE_CXX_FLAGS="-fvisibility=default -std=c++20" \
+            -DLIB_DIR="${LIB_DIR}" \
+            -DDATATOC_EXECUTABLE="$HOST_TOOLS/datatoc" \
+            -DGLSL_PREPROCESS_EXECUTABLE="$HOST_TOOLS/glsl_preprocess" \
+            -DMAKESDNA_EXECUTABLE="$HOST_TOOLS/makesdna" \
+            -DMAKESRNA_EXECUTABLE="$HOST_TOOLS/makesrna" \
+            -DWITH_BLENDER=ON \
+            -DWITH_PYTHON=ON \
+            -DWITH_INTERNATIONAL=ON \
+            -DWITH_MOD_FLUID=ON \
+            -DWITH_CODEC_FFMPEG=ON \
+            -DWITH_OPENAL=ON \
+            -DWITH_SDL=OFF \
+            -DWITH_GHOST_X11=OFF \
+            -DWITH_GHOST_WAYLAND=ON \
+            -DWITH_GHOST_WAYLAND_DYNLOAD=OFF \
+            -DWITH_JACK=OFF \
+            -DWITH_PULSEAUDIO=OFF \
+            -DWITH_OPENCOLLADA=ON \
+            -DWITH_OPENSUBDIV=ON \
+            -DWITH_OPENVDB=ON \
+            -DWITH_NANOVDB=ON \
+            -DWITH_ALEMBIC=ON \
+            -DWITH_USD=ON \
+            -DWITH_CYCLES=ON \
+            -DWITH_CYCLES_OSL=OFF \
+            -DWITH_CYCLES_EMBREE=ON \
+            -DWITH_TBB=ON \
+            -DWITH_OPENIMAGEDENOISE=ON \
+            -DWITH_FFTW3=ON \
+            -DWITH_GMP=ON \
+            -DWITH_POTRACE=ON \
+            -DWITH_LLVM=OFF \
+            -DWITH_GTESTS=OFF \
+            -DWITH_VULKAN_BACKEND=OFF \
+            -DWITH_INSTALL_PORTABLE=ON \
+            -DWITH_BUILDINFO=OFF \
+            -DWITH_COMPILER_CCACHE=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Patch host tool paths in build.ninja
+        run: |
+          BUILD_DIR="${{ github.workspace }}/build"
+          NINJA_FILE="$BUILD_DIR/build.ninja"
+          HOST_TOOLS="${{ github.workspace }}/build/host_tools"
+
+          for tool in datatoc glsl_preprocess; do
+            SRC="${{ github.workspace }}/blender/build/bin/${tool}"
+            DST="${HOST_TOOLS}/${tool}"
+            if [ -f "$DST" ]; then
+              count=$(grep -c "$SRC" "$NINJA_FILE" 2>/dev/null || echo 0)
+              if [ "$count" -gt 0 ]; then
+                sed -i "s|$SRC|$DST|g" "$NINJA_FILE"
+                echo "Patched $tool: $count occurrences"
+              fi
+            fi
+          done
+
+      - name: Stage DNA and RNA files
+        run: |
+          # DNA
+          HOST_DNA_DIR="${{ github.workspace }}/build/host_dna_gen"
+          CROSS_DNA_DIR="${{ github.workspace }}/build/source/blender/makesdna/intern"
+          mkdir -p "$CROSS_DNA_DIR"
+          for f in "$HOST_DNA_DIR"/*.h "$HOST_DNA_DIR"/*.c; do
+            [ -f "$f" ] && cp -v "$f" "$CROSS_DNA_DIR/"
+          done
+
+          # RNA
+          HOST_RNA_DIR="${{ github.workspace }}/build_host/source/blender/makesrna/intern"
+          CROSS_RNA_DIR="${{ github.workspace }}/build/source/blender/makesrna/intern"
+          mkdir -p "$CROSS_RNA_DIR"
+          for f in "$HOST_RNA_DIR"/*.c "$HOST_RNA_DIR"/*.h; do
+            [ -f "$f" ] && cp -v "$f" "$CROSS_RNA_DIR/"
+          done
+
+      - name: Cross-compile static libraries
+        shell: bash -o pipefail {0}
+        run: |
+          BUILD_DIR="${{ github.workspace }}/build"
+          cd "$BUILD_DIR"
+
+          echo "=== Enumerating library targets ==="
+          LIB_TARGETS=$(ninja -t targets all 2>/dev/null | grep -E '^(bf_|extern_|cycles_|audaspace|makesdna|makesrna|draco)' | sed 's/:.*//' | sort -u)
+          TARGET_COUNT=$(echo "$LIB_TARGETS" | wc -l)
+          echo "Found $TARGET_COUNT library targets"
+
+          if [ "$TARGET_COUNT" -eq 0 ]; then
+            echo "ERROR: No library targets found!"
+            ninja -t targets all 2>/dev/null | head -100
+            exit 1
+          fi
+
+          echo "=== Building $TARGET_COUNT static library targets ==="
+          set -o pipefail
+          ninja -j$(nproc) $LIB_TARGETS 2>&1 | tee /tmp/build.log
+          NINJA_STATUS=$?
+          echo "=== Static library build complete ==="
+          if [ "$NINJA_STATUS" -ne 0 ]; then
+            echo "ERROR: ninja failed with exit code $NINJA_STATUS"
+            exit 1
+          fi
+        timeout-minutes: 180
+
+      - name: Package static libraries
+        run: |
+          cd ${{ github.workspace }}
+          find blender/build -name "*.a" -type f | zip -@ build/blender-4.5-android-arm64-static-libs.zip
+          echo "=== Package info ==="
+          ls -lh build/blender-4.5-android-arm64-static-libs.zip
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+          retention-days: 7
+
+      - name: Upload static libraries artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-4.5-android-arm64-static-libs
+          path: ${{ github.workspace }}/build/blender-4.5-android-arm64-static-libs.zip
+          retention-days: 30
+
+      - name: Save ccache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-blender45-${{ runner.os }}-${{ github.sha }}
