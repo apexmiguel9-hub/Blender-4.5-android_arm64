@@ -30,25 +30,25 @@ jobs:
       - name: Download precompiled libraries
         uses: actions/download-artifact@v4
         with:
-          name: libs-blender-4.5
-          path: ${{ github.workspace }}/libs-artifact
+          name: libs-blender-4.5-arm64
+          path: ${{ github.workspace }}/libs-dl
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract precompiled libraries
         run: |
-          cd ${{ github.workspace }}/libs-artifact
-          ls -lh *.zip 2>/dev/null || ls -lh
+          cd ${{ github.workspace }}/libs-dl
+          ls -lh
           mkdir -p ${{ github.workspace }}/libs
-          # If there's a zip, extract it
-          if [ -f "libs-blender-4.5.zip" ]; then
-            unzip -o libs-blender-4.5.zip -d ${{ github.workspace }}/libs/
-          elif [ -f "*.tar.gz" ]; then
-            tar xzf *.tar.gz -C ${{ github.workspace }}/libs/
+          if [ -f "libs-blender-4.5-arm64.tar.gz" ]; then
+            tar xzf libs-blender-4.5-arm64.tar.gz -C ${{ github.workspace }}/libs/
+          elif [ -f "*.zip" ]; then
+            unzip -o *.zip -d ${{ github.workspace }}/libs/
           fi
           echo "=== Libraries ==="
-          find ${{ github.workspace }}/libs -name "*.a" -o -name "*.so" | head -30
+          find ${{ github.workspace }}/libs -name "*.a" -o -name "*.so" | wc -l
+          find ${{ github.workspace }}/libs -name "*.a" | head -20
           echo "=== Includes ==="
-          find ${{ github.workspace }}/libs -maxdepth 3 -type d | head -30
+          find ${{ github.workspace }}/libs -maxdepth 2 -type d | head -20
 
       - name: Restore ccache
         uses: actions/cache/restore@v4
@@ -141,9 +141,9 @@ jobs:
           echo "datatoc built"
 
           # glsl_preprocess (NEW in 4.5)
-          if [ -f "$GITROOT/source/blender/gpu/intern/gpu_shader_preprocess.cc" ]; then
+          if [ -f "$GITROOT/source/blender/gpu/glsl_preprocess/glsl_preprocess.cc" ]; then
             g++ -std=c++20 -O2 -o "$HOST_TOOLS/glsl_preprocess" \
-              "$GITROOT/source/blender/gpu/intern/gpu_shader_preprocess.cc" -lm && \
+              "$GITROOT/source/blender/gpu/glsl_preprocess/glsl_preprocess.cc" -lm && \
               echo "glsl_preprocess built" || \
               echo "Warning: glsl_preprocess build failed"
           else
@@ -338,6 +338,7 @@ jobs:
             -DWITH_VULKAN_BACKEND=OFF \
             -DWITH_INSTALL_PORTABLE=ON \
             -DWITH_BUILDINFO=OFF \
+            -DWITH_HEADLESS=ON \
             -DWITH_COMPILER_CCACHE=ON \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
