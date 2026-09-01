@@ -27,12 +27,12 @@ jobs:
         with:
           path: blender-android
 
-      - name: Download precompiled libraries
-        uses: actions/download-artifact@v4
+      - name: Download precompiled libraries from libs repo
+        uses: dawidd6/action-download-artifact@v6
         with:
+          repo: dexapex377-coder/libs-blender-4.5_arm64
           name: libs-blender-4.5-arm64
           path: ${{ github.workspace }}/libs-dl
-          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract precompiled libraries
         run: |
