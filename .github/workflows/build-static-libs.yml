@@ -304,6 +304,7 @@ jobs:
             -DCMAKE_C_FLAGS="-fvisibility=default" \
             -DCMAKE_CXX_FLAGS="-fvisibility=default -std=c++20" \
             -DLIB_DIR="${LIB_DIR}" \
+            -DCMAKE_PREFIX_PATH="${LIB_DIR}" \
             -DDATATOC_EXECUTABLE="$HOST_TOOLS/datatoc" \
             -DGLSL_PREPROCESS_EXECUTABLE="$HOST_TOOLS/glsl_preprocess" \
             -DMAKESDNA_EXECUTABLE="$HOST_TOOLS/makesdna" \
