@@ -154,19 +154,18 @@ jobs:
             "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
           # Fix FindOpenImageIO.cmake crash when _openimageio_export is NOTFOUND
           python3 -c "
-import re
-f = '${{ github.workspace }}/blender/build_files/cmake/Modules/FindOpenImageIO.cmake'
-with open(f) as fh: c = fh.read()
-old = 'file(STRINGS \"\${_openimageio_export}\" _openimageio_util_define'
-new = 'if(NOT _openimageio_export MATCHES \"NOTFOUND\")\n  file(STRINGS \"\${_openimageio_export}\" _openimageio_util_define'
-c = c.replace(old, new, 1)
-# Close the if after the file(STRINGS) block ends
-old2 = 'if(_openimageio_util_define)\n  find_library(OPENIMAGEIO_UTIL_LIBRARY'
-new2 = 'endif()\nif(_openimageio_util_define)\n  find_library(OPENIMAGEIO_UTIL_LIBRARY'
-c = c.replace(old2, new2, 1)
-with open(f, 'w') as fh: fh.write(c)
-print('Patched FindOpenImageIO.cmake')
-"
+          import re
+          f = '${{ github.workspace }}/blender/build_files/cmake/Modules/FindOpenImageIO.cmake'
+          with open(f) as fh: c = fh.read()
+          old = 'file(STRINGS \"\${_openimageio_export}\" _openimageio_util_define'
+          new = 'if(NOT _openimageio_export MATCHES \"NOTFOUND\")\n  file(STRINGS \"\${_openimageio_export}\" _openimageio_util_define'
+          c = c.replace(old, new, 1)
+          old2 = 'if(_openimageio_util_define)\n  find_library(OPENIMAGEIO_UTIL_LIBRARY'
+          new2 = 'endif()\nif(_openimageio_util_define)\n  find_library(OPENIMAGEIO_UTIL_LIBRARY'
+          c = c.replace(old2, new2, 1)
+          with open(f, 'w') as fh: fh.write(c)
+          print('Patched FindOpenImageIO.cmake')
+          "
           sed -i 's/find_package_wrapper(Zstd REQUIRED)/find_package_wrapper(Zstd)/' \
             "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
           sed -i 's/find_package_wrapper(Freetype REQUIRED)/find_package_wrapper(Freetype)/' \
