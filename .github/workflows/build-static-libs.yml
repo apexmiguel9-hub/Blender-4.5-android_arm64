@@ -216,6 +216,7 @@ jobs:
             "$DNA_GEN_DIR/dna.c" \
             "$DNA_GEN_DIR/dna_type_offsets.h" \
             "$DNA_GEN_DIR/dna_verify.c" \
+            "$DNA_GEN_DIR/dna_struct_ids.cc" \
             "$DNA_INC_DIR/"
           echo "DNA files generated"
 
@@ -223,6 +224,7 @@ jobs:
           cp /tmp/makesdna "$HOST_TOOLS/makesdna"
           cp "$DNA_GEN_DIR/dna_includes_all.h" "$DNA_GEN_DIR/dna_includes_as_strings.h" \
             "$DNA_GEN_DIR/dna.c" "$DNA_GEN_DIR/dna_type_offsets.h" "$DNA_GEN_DIR/dna_verify.c" \
+            "$DNA_GEN_DIR/dna_struct_ids.cc" \
             "$HOST_TOOLS/"
 
       - name: Phase 3 - Configure CMake for makesrna
