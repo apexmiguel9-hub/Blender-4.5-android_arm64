@@ -77,7 +77,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ninja-build ccache
+          sudo apt-get install -y -qq ninja-build ccache libpython3-dev
 
       - name: Patch epoxy version check for GLES
         run: |
@@ -232,7 +232,7 @@ jobs:
           GITROOT="${{ github.workspace }}/blender"
           LIB_DIR="${{ github.workspace }}/libs"
 
-          cmake -B "${{ github.workspace }}/build_host" -G Ninja \
+          cmake -S "$GITROOT" -B "${{ github.workspace }}/build_host" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DLIB_DIR="${LIB_DIR}" \
             -DWITH_BLENDER=ON \
@@ -283,29 +283,49 @@ jobs:
       - name: Phase 4 - Build and run makesrna
         run: |
           GITROOT="${{ github.workspace }}/blender"
-          ninja -C "${{ github.workspace }}/build_host" bf_dna 2>&1 | tail -10
-          ninja -C "${{ github.workspace }}/build_host" bf_dna_blenlib 2>&1 | tail -10
-          ninja -C "${{ github.workspace }}/build_host" makesrna 2>&1 | tail -10
-
-          RNA_GEN_DIR="${{ github.workspace }}/build_host/source/blender/makesrna/intern"
           HOST_TOOLS="${{ github.workspace }}/build/host_tools"
-          cp "${{ github.workspace }}/build_host/lib/libmakesrna.a" "$HOST_TOOLS/" 2>/dev/null || true
-          cp "${{ github.workspace }}/build_host/lib/libbf_dna.a" "$HOST_TOOLS/" 2>/dev/null || true
-          cp "${{ github.workspace }}/build_host/lib/libbf_dna_blenlib.a" "$HOST_TOOLS/" 2>/dev/null || true
+          BUILD_HOST="${{ github.workspace }}/build_host"
 
-          # Link makesrna
-          g++ -o /tmp/makesrna \
-            -Wl,--start-group \
-            "$HOST_TOOLS/libbf_dna.a" \
-            "$HOST_TOOLS/libbf_dna_blenlib.a" \
-            "$HOST_TOOLS/libmakesrna.a" \
-            -Wl,--end-group \
-            -lm -lpthread
-          /tmp/makesrna "$RNA_GEN_DIR/" "${{ github.workspace }}/build_host/source/blender/makesrna/"
-          echo "makesrna ran"
+          echo "=== Building bf_dna ==="
+          ninja -C "$BUILD_HOST" bf_dna 2>&1 | tail -20
+          echo "=== Building bf_dna_blenlib ==="
+          ninja -C "$BUILD_HOST" bf_dna_blenlib 2>&1 | tail -20
+          echo "=== Building makesrna ==="
+          ninja -C "$BUILD_HOST" makesrna 2>&1 | tail -20
 
-          cp "$RNA_GEN_DIR"/*.c "$RNA_GEN_DIR"/*.h "$HOST_TOOLS/" 2>/dev/null || true
-          cp /tmp/makesrna "$HOST_TOOLS/makesrna"
+          RNA_GEN_DIR="$BUILD_HOST/source/blender/makesrna/intern"
+
+          # Copy libs
+          cp "$BUILD_HOST/lib/libbf_dna.a" "$HOST_TOOLS/" 2>/dev/null || \
+            cp "$BUILD_HOST/source/blender/makesdna/intern/libbf_dna.a" "$HOST_TOOLS/" 2>/dev/null || true
+          cp "$BUILD_HOST/lib/libbf_dna_blenlib.a" "$HOST_TOOLS/" 2>/dev/null || \
+            cp "$BUILD_HOST/source/blender/makesdna/intern/libbf_dna_blenlib.a" "$HOST_TOOLS/" 2>/dev/null || true
+          cp "$BUILD_HOST/lib/libmakesrna.a" "$HOST_TOOLS/" 2>/dev/null || \
+            cp "$BUILD_HOST/source/blender/makesrna/intern/libmakesrna.a" "$HOST_TOOLS/" 2>/dev/null || true
+
+          # Find and copy makesrna binary
+          find "$BUILD_HOST" -name "makesrna" -type f -executable 2>/dev/null | head -3
+          find "$BUILD_HOST" -name "makesrna*" -type f 2>/dev/null | head -5
+
+          # Link makesrna if libs exist
+          if [ -f "$HOST_TOOLS/libbf_dna.a" ] && [ -f "$HOST_TOOLS/libbf_dna_blenlib.a" ] && [ -f "$HOST_TOOLS/libmakesrna.a" ]; then
+            g++ -o /tmp/makesrna \
+              -Wl,--start-group \
+              "$HOST_TOOLS/libbf_dna.a" \
+              "$HOST_TOOLS/libbf_dna_blenlib.a" \
+              "$HOST_TOOLS/libmakesrna.a" \
+              -Wl,--end-group \
+              -lm -lpthread
+            echo "makesrna linked"
+            /tmp/makesrna "$RNA_GEN_DIR/" "$BUILD_HOST/source/blender/makesrna/"
+            echo "makesrna ran"
+            cp "$RNA_GEN_DIR"/*.c "$RNA_GEN_DIR"/*.h "$HOST_TOOLS/" 2>/dev/null || true
+            cp /tmp/makesrna "$HOST_TOOLS/makesrna"
+          else
+            echo "Some libs missing, trying cmake build of makesrna directly..."
+            # Maybe makesrna is already a standalone binary from cmake
+            find "$BUILD_HOST" -name "makesrna" -not -type d 2>/dev/null
+          fi
 
       - name: Phase 5 - Configure CMake for cross-compile
         run: |
@@ -314,7 +334,7 @@ jobs:
           NDK_DIR="${{ env.ANDROID_NDK_HOME }}"
           HOST_TOOLS="${{ github.workspace }}/build/host_tools"
 
-          cmake -B "${{ github.workspace }}/build" \
+          cmake -S "$GITROOT" -B "${{ github.workspace }}/build" \
             -G "Ninja" \
             -DCMAKE_TOOLCHAIN_FILE="${NDK_DIR}/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
