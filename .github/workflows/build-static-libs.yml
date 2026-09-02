@@ -407,7 +407,7 @@ jobs:
             -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_FLAGS="-fvisibility=default" \
-            -DCMAKE_CXX_FLAGS="-fvisibility=default -std=c++20" \
+            -DCMAKE_CXX_FLAGS="-fvisibility=default -std=c++20 -include time.h" \
             -DLIBDIR="$LIB_DIR" \
             -DCMAKE_PREFIX_PATH="$LIB_DIR" \
             -DCMAKE_FIND_ROOT_PATH="$LIB_DIR" \
@@ -432,9 +432,9 @@ jobs:
             -DWITH_PYTHON=OFF \
             -DWITH_INTERNATIONAL=ON \
             -DWITH_MOD_FLUID=OFF \
-            -DWITH_CODEC_FFMPEG=OFF \
-            -DWITH_OPENAL=OFF \
-            -DWITH_SDL=OFF \
+            -DWITH_CODEC_FFMPEG=ON \
+            -DWITH_OPENAL=ON \
+            -DWITH_SDL=ON \
             -DWITH_GHOST_X11=OFF \
             -DWITH_GHOST_WAYLAND=OFF \
             -DWITH_JACK=OFF \
@@ -445,14 +445,14 @@ jobs:
             -DWITH_NANOVDB=OFF \
             -DWITH_ALEMBIC=OFF \
             -DWITH_USD=OFF \
-            -DWITH_MATERIALX=OFF \
+            -DWITH_MATERIALX=ON \
             -DWITH_CYCLES=OFF \
             -DWITH_CYCLES_OSL=OFF \
             -DWITH_CYCLES_EMBREE=ON \
             -DWITH_TBB=ON \
             -DWITH_OPENIMAGEDENOISE=OFF \
-            -DWITH_FFTW3=OFF \
-            -DWITH_GMP=OFF \
+            -DWITH_FFTW3=ON \
+            -DWITH_GMP=ON \
             -DWITH_POTRACE=OFF \
             -DWITH_LLVM=OFF \
             -DWITH_GTESTS=OFF \
