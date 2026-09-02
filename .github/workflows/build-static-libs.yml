@@ -150,6 +150,18 @@ jobs:
             "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
           sed -i 's/find_package(PythonLibsUnix REQUIRED)/find_package(PythonLibsUnix)/' \
             "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          sed -i 's/find_package_wrapper(OpenImageIO REQUIRED)/find_package_wrapper(OpenImageIO)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          sed -i 's/find_package_wrapper(Zstd REQUIRED)/find_package_wrapper(Zstd)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          sed -i 's/find_package_wrapper(Freetype REQUIRED)/find_package_wrapper(Freetype)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          sed -i 's/find_package_wrapper(Brotli REQUIRED)/find_package_wrapper(Brotli)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          sed -i 's/find_package_wrapper(Vulkan REQUIRED)/find_package_wrapper(Vulkan)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          sed -i 's/find_package_wrapper(ShaderC REQUIRED)/find_package_wrapper(ShaderC)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
           echo "=== REQUIRED removed from host cmake deps ==="
 
       - name: Phase 1 - Build host tools natively
@@ -250,6 +262,7 @@ jobs:
             "$HOST_TOOLS/"
 
       - name: Phase 3 - Configure CMake for makesrna
+        shell: bash -o pipefail {0}
         run: |
           GITROOT="${{ github.workspace }}/blender"
           LIB_DIR="${{ github.workspace }}/libs"
@@ -351,6 +364,7 @@ jobs:
           fi
 
       - name: Phase 5 - Configure CMake for cross-compile
+        shell: bash -o pipefail {0}
         run: |
           GITROOT="${{ github.workspace }}/blender"
           LIB_DIR="${{ github.workspace }}/libs"
