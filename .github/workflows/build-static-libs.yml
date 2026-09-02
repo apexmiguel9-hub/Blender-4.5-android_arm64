@@ -342,8 +342,20 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_FLAGS="-fvisibility=default" \
             -DCMAKE_CXX_FLAGS="-fvisibility=default -std=c++20" \
-            -DLIB_DIR="${LIB_DIR}" \
+            -DLIBDIR="${LIB_DIR}" \
             -DCMAKE_PREFIX_PATH="${LIB_DIR}" \
+            -DCMAKE_FIND_ROOT_PATH="${LIB_DIR}" \
+            -DJPEG_LIBRARY="${LIB_DIR}/lib/libjpeg.a" \
+            -DJPEG_INCLUDE_DIR="${LIB_DIR}/include" \
+            -DPNG_LIBRARY="${LIB_DIR}/lib/libpng16.a" \
+            -DPNG_PNG_INCLUDE_DIR="${LIB_DIR}/include" \
+            -DZLIB_LIBRARY="${LIB_DIR}/lib/libz.a" \
+            -DZLIB_INCLUDE_DIR="${LIB_DIR}/include" \
+            -DFREETYPE_LIBRARY="${LIB_DIR}/lib/libfreetype.a" \
+            -DFREETYPE_INCLUDE_DIR="${LIB_DIR}/include/freetype2" \
+            -DTIFF_LIBRARY="${LIB_DIR}/lib/libtiff.a" \
+            -DTIFF_INCLUDE_DIR="${LIB_DIR}/include" \
+            -DWITH_LIBS_PRECOMPILED=ON \
             -DDATATOC_EXECUTABLE="$HOST_TOOLS/datatoc" \
             -DGLSL_PREPROCESS_EXECUTABLE="$HOST_TOOLS/glsl_preprocess" \
             -DMAKESDNA_EXECUTABLE="$HOST_TOOLS/makesdna" \
