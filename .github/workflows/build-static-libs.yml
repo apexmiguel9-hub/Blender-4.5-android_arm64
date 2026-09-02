@@ -161,9 +161,9 @@ jobs:
           DNA_GEN_DIR="${{ github.workspace }}/build/host_dna_gen"
           mkdir -p "$DNA_GEN_DIR"
 
-          # Generate includes list (133+ headers, do NOT limit with head)
-          DNA_HDR_LIST=$(sed -n 's/.*makesdna\/\(DNA_[a-zA-Z0-9_]*\.h\).*/\1/p' \
-            "$GITROOT/source/blender/CMakeLists.txt")
+          # Generate includes list — ONLY from SRC_DNA_INC (lines 5-103), not defaults
+          DNA_HDR_LIST=$(sed -n '5,103p' "$GITROOT/source/blender/CMakeLists.txt" \
+            | sed -n 's/.*makesdna\/\(DNA_[a-zA-Z0-9_]*\.h\).*/\1/p')
           {
             echo "/* Do not edit manually */"
             echo "$DNA_HDR_LIST" | while IFS= read -r hdr; do echo "#include \"$hdr\""; done
