@@ -161,9 +161,9 @@ jobs:
           DNA_GEN_DIR="${{ github.workspace }}/build/host_dna_gen"
           mkdir -p "$DNA_GEN_DIR"
 
-          # Generate includes list
+          # Generate includes list (133+ headers, do NOT limit with head)
           DNA_HDR_LIST=$(sed -n 's/.*makesdna\/\(DNA_[a-zA-Z0-9_]*\.h\).*/\1/p' \
-            "$GITROOT/source/blender/CMakeLists.txt" | head -90)
+            "$GITROOT/source/blender/CMakeLists.txt")
           {
             echo "/* Do not edit manually */"
             echo "$DNA_HDR_LIST" | while IFS= read -r hdr; do echo "#include \"$hdr\""; done
@@ -179,15 +179,23 @@ jobs:
           CFLAGS="-O2 -I$DNA_INC_DIR -I$GITROOT/source/blender/blenlib \
             -I$GITROOT/intern/atomic -I$GITROOT/intern/guardedalloc -I$DNA_GEN_DIR"
 
-          # 4.5 uses .cc for everything
-          g++ $CFLAGS -c -o /tmp/ms_main.o  "$DNA_INC_DIR/intern/makesdna.cc"
-          g++ $CFLAGS -c -o /tmp/ms_utils.o "$DNA_INC_DIR/intern/dna_utils.cc"
+          # 4.5 uses .cc for everything — compile ALL sources from official CMakeLists.txt
+          FMTLIB="$GITROOT/extern/fmtlib/include"
+          g++ -std=c++20 $CFLAGS -I"$FMTLIB" -c -o /tmp/ms_main.o  "$DNA_INC_DIR/intern/makesdna.cc"
+          g++ -std=c++20 $CFLAGS -I"$FMTLIB" -c -o /tmp/ms_utils.o "$DNA_INC_DIR/intern/dna_utils.cc"
           g++ $CFLAGS -c -o /tmp/ms_asrt.o "$BLIB/BLI_assert.cc"
           g++ $CFLAGS -c -o /tmp/ms_ghash.o "$BLIB/BLI_ghash.cc"
           g++ $CFLAGS -c -o /tmp/ms_gh2.o  "$BLIB/BLI_ghash_utils.cc"
+          g++ $CFLAGS -c -o /tmp/ms_link.o "$BLIB/BLI_linklist.cc"
           g++ $CFLAGS -c -o /tmp/ms_mema.o "$BLIB/BLI_memarena.cc"
           g++ $CFLAGS -c -o /tmp/ms_memp.o "$BLIB/BLI_mempool.cc"
+          g++ $CFLAGS -c -o /tmp/ms_endi.o "$BLIB/endian_switch.cc"
+          g++ $CFLAGS -c -o /tmp/ms_list.o "$BLIB/listbase.cc"
+          g++ $CFLAGS -c -o /tmp/ms_str.o  "$BLIB/string.cc"
           g++ $CFLAGS -c -o /tmp/ms_hash.o "$BLIB/hash_mm2a.cc"
+          g++ $CFLAGS -c -o /tmp/ms_gsq.o "$BLIB/gsqueue.cc"
+          g++ $CFLAGS -c -o /tmp/ms_thrd.o "$BLIB/threads.cc"
+          g++ $CFLAGS -c -o /tmp/ms_time.o "$BLIB/time.cc"
           g++ $CFLAGS -c -o /tmp/ms_ml1.o "$GUARD/mallocn.cc"
           g++ $CFLAGS -c -o /tmp/ms_ml2.o "$GUARD/mallocn_guarded_impl.cc"
           g++ $CFLAGS -c -o /tmp/ms_ml3.o "$GUARD/mallocn_lockfree_impl.cc"
@@ -196,7 +204,9 @@ jobs:
 
           g++ -o /tmp/makesdna \
             /tmp/ms_main.o /tmp/ms_utils.o /tmp/ms_asrt.o /tmp/ms_ghash.o \
-            /tmp/ms_gh2.o /tmp/ms_mema.o /tmp/ms_memp.o /tmp/ms_hash.o \
+            /tmp/ms_gh2.o /tmp/ms_link.o /tmp/ms_mema.o /tmp/ms_memp.o \
+            /tmp/ms_endi.o /tmp/ms_list.o /tmp/ms_str.o /tmp/ms_hash.o \
+            /tmp/ms_gsq.o /tmp/ms_thrd.o /tmp/ms_time.o \
             /tmp/ms_ml1.o /tmp/ms_ml2.o /tmp/ms_ml3.o \
             /tmp/ms_leak.o /tmp/ms_mem.o \
             -lm -lpthread
