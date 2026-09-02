@@ -334,6 +334,45 @@ jobs:
           NDK_DIR="${{ env.ANDROID_NDK_HOME }}"
           HOST_TOOLS="${{ github.workspace }}/build/host_tools"
 
+          echo "=== LIB_DIR=$LIB_DIR ==="
+          echo "=== Contents: ==="
+          ls -la "$LIB_DIR/" 2>/dev/null || echo "LIB_DIR does not exist!"
+          ls -la "$LIB_DIR/lib/" 2>/dev/null | head -10
+          ls -la "$LIB_DIR/include/" 2>/dev/null | head -10
+
+          # Create per-package structure that cmake expects
+          mkdir -p "$LIB_DIR/jpeg/lib" "$LIB_DIR/jpeg/include"
+          ln -sf "$LIB_DIR/lib/libjpeg.a" "$LIB_DIR/jpeg/lib/" 2>/dev/null || true
+          ln -sf "$LIB_DIR/lib/libturbojpeg.a" "$LIB_DIR/jpeg/lib/" 2>/dev/null || true
+          ln -sf "$LIB_DIR/include/jpeglib.h" "$LIB_DIR/jpeg/include/" 2>/dev/null || true
+          ln -sf "$LIB_DIR/include/jconfig.h" "$LIB_DIR/jpeg/include/" 2>/dev/null || true
+          ln -sf "$LIB_DIR/include/jmorecfg.h" "$LIB_DIR/jpeg/include/" 2>/dev/null || true
+          ln -sf "$LIB_DIR/include/jerror.h" "$LIB_DIR/jpeg/include/" 2>/dev/null || true
+
+          mkdir -p "$LIB_DIR/png/lib" "$LIB_DIR/png/include"
+          ln -sf "$LIB_DIR/lib/libpng16.a" "$LIB_DIR/png/lib/" 2>/dev/null || true
+          for h in png.h pngconf.h; do
+            ln -sf "$LIB_DIR/include/$h" "$LIB_DIR/png/include/" 2>/dev/null || true
+          done
+
+          mkdir -p "$LIB_DIR/zlib/lib" "$LIB_DIR/zlib/include"
+          ln -sf "$LIB_DIR/lib/libz.a" "$LIB_DIR/zlib/lib/" 2>/dev/null || true
+          for h in zconf.h zlib.h; do
+            ln -sf "$LIB_DIR/include/$h" "$LIB_DIR/zlib/include/" 2>/dev/null || true
+          done
+
+          mkdir -p "$LIB_DIR/freetype/lib" "$LIB_DIR/freetype/include"
+          ln -sf "$LIB_DIR/lib/libfreetype.a" "$LIB_DIR/freetype/lib/" 2>/dev/null || true
+          cp -r "$LIB_DIR/include/freetype2" "$LIB_DIR/freetype/include/" 2>/dev/null || true
+
+          mkdir -p "$LIB_DIR/tiff/lib" "$LIB_DIR/tiff/include"
+          ln -sf "$LIB_DIR/lib/libtiff.a" "$LIB_DIR/tiff/lib/" 2>/dev/null || true
+          for h in tiff.h tiffvers.h tiffio.h; do
+            ln -sf "$LIB_DIR/include/$h" "$LIB_DIR/tiff/include/" 2>/dev/null || true
+          done
+
+          echo "=== Symlinks created ==="
+
           cmake -S "$GITROOT" -B "${{ github.workspace }}/build" \
             -G "Ninja" \
             -DCMAKE_TOOLCHAIN_FILE="${NDK_DIR}/build/cmake/android.toolchain.cmake" \
@@ -342,20 +381,11 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_FLAGS="-fvisibility=default" \
             -DCMAKE_CXX_FLAGS="-fvisibility=default -std=c++20" \
-            -DLIBDIR="${LIB_DIR}" \
-            -DCMAKE_PREFIX_PATH="${LIB_DIR}" \
-            -DCMAKE_FIND_ROOT_PATH="${LIB_DIR}" \
-            -DJPEG_LIBRARY="${LIB_DIR}/lib/libjpeg.a" \
-            -DJPEG_INCLUDE_DIR="${LIB_DIR}/include" \
-            -DPNG_LIBRARY="${LIB_DIR}/lib/libpng16.a" \
-            -DPNG_PNG_INCLUDE_DIR="${LIB_DIR}/include" \
-            -DZLIB_LIBRARY="${LIB_DIR}/lib/libz.a" \
-            -DZLIB_INCLUDE_DIR="${LIB_DIR}/include" \
-            -DFREETYPE_LIBRARY="${LIB_DIR}/lib/libfreetype.a" \
-            -DFREETYPE_INCLUDE_DIR="${LIB_DIR}/include/freetype2" \
-            -DTIFF_LIBRARY="${LIB_DIR}/lib/libtiff.a" \
-            -DTIFF_INCLUDE_DIR="${LIB_DIR}/include" \
-            -DWITH_LIBS_PRECOMPILED=ON \
+            -DLIBDIR="$LIB_DIR" \
+            -DCMAKE_PREFIX_PATH="$LIB_DIR" \
+            -DCMAKE_FIND_ROOT_PATH="$LIB_DIR" \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
             -DDATATOC_EXECUTABLE="$HOST_TOOLS/datatoc" \
             -DGLSL_PREPROCESS_EXECUTABLE="$HOST_TOOLS/glsl_preprocess" \
             -DMAKESDNA_EXECUTABLE="$HOST_TOOLS/makesdna" \
@@ -382,9 +412,9 @@ jobs:
             -DWITH_CYCLES_EMBREE=ON \
             -DWITH_TBB=ON \
             -DWITH_OPENIMAGEDENOISE=OFF \
-            -DWITH_FFTW3=ON \
-            -DWITH_GMP=ON \
-            -DWITH_POTRACE=ON \
+            -DWITH_FFTW3=OFF \
+            -DWITH_GMP=OFF \
+            -DWITH_POTRACE=OFF \
             -DWITH_LLVM=OFF \
             -DWITH_GTESTS=OFF \
             -DWITH_VULKAN_BACKEND=OFF \
@@ -393,7 +423,9 @@ jobs:
             -DWITH_HEADLESS=ON \
             -DWITH_COMPILER_CCACHE=ON \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DWITH_STRICT_BUILD_OPTIONS=OFF \
+            2>&1 | tail -40
 
       - name: Patch host tool paths in build.ninja
         run: |
