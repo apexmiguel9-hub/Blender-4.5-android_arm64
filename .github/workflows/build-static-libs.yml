@@ -139,7 +139,7 @@ jobs:
             "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
           echo "=== Freetype brotli check patched ==="
 
-          # Make JPEG/PNG/ZLIB/Epoxy not REQUIRED in platform_unix.cmake (host build doesn't need them)
+          # Make JPEG/PNG/ZLIB/Epoxy/PythonLibs not REQUIRED in platform_unix.cmake (host build doesn't need them)
           sed -i 's/find_package_wrapper(JPEG REQUIRED)/find_package_wrapper(JPEG)/' \
             "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
           sed -i 's/find_package_wrapper(PNG REQUIRED)/find_package_wrapper(PNG)/' \
@@ -147,6 +147,8 @@ jobs:
           sed -i 's/find_package_wrapper(ZLIB REQUIRED)/find_package_wrapper(ZLIB)/' \
             "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
           sed -i 's/find_package_wrapper(Epoxy REQUIRED)/find_package_wrapper(Epoxy)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          sed -i 's/find_package(PythonLibsUnix REQUIRED)/find_package(PythonLibsUnix)/' \
             "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
           echo "=== REQUIRED removed from host cmake deps ==="
 
@@ -256,8 +258,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DLIB_DIR="${LIB_DIR}" \
             -DWITH_BLENDER=ON \
-            -DWITH_PYTHON=ON \
-            -DWITH_INTERNATIONAL=ON \
+            -DWITH_PYTHON=OFF \
+            -DWITH_INTERNATIONAL=OFF \
             -DWITH_CODEC_FFMPEG=OFF \
             -DWITH_OPENAL=OFF \
             -DWITH_SDL=OFF \
@@ -457,16 +459,22 @@ jobs:
           CROSS_DNA_DIR="${{ github.workspace }}/build/source/blender/makesdna/intern"
           mkdir -p "$CROSS_DNA_DIR"
           for f in "$HOST_DNA_DIR"/*.h "$HOST_DNA_DIR"/*.c "$HOST_DNA_DIR"/*.cc; do
-            [ -f "$f" ] && cp -v "$f" "$CROSS_DNA_DIR/"
+            [ -f "$f" ] && cp -v "$f" "$CROSS_DNA_DIR/" || true
           done
 
           # RNA
           HOST_RNA_DIR="${{ github.workspace }}/build_host/source/blender/makesrna/intern"
           CROSS_RNA_DIR="${{ github.workspace }}/build/source/blender/makesrna/intern"
           mkdir -p "$CROSS_RNA_DIR"
-          for f in "$HOST_RNA_DIR"/*.c "$HOST_RNA_DIR"/*.cc "$HOST_RNA_DIR"/*.h; do
-            [ -f "$f" ] && cp -v "$f" "$CROSS_RNA_DIR/"
-          done
+          if [ -d "$HOST_RNA_DIR" ]; then
+            for f in "$HOST_RNA_DIR"/*.c "$HOST_RNA_DIR"/*.cc "$HOST_RNA_DIR"/*.h; do
+              [ -f "$f" ] && cp -v "$f" "$CROSS_RNA_DIR/" || true
+            done
+          else
+            echo "WARNING: HOST_RNA_DIR does not exist (makesrna likely failed)"
+          fi
+          echo "DNA files staged: $(ls "$CROSS_DNA_DIR/" | wc -l)"
+          echo "RNA files staged: $(ls "$CROSS_RNA_DIR/" | wc -l)"
 
       - name: Cross-compile static libraries
         shell: bash -o pipefail {0}
