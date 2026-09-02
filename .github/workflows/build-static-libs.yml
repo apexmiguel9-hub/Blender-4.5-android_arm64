@@ -136,9 +136,12 @@ jobs:
           HOST_TOOLS="${{ github.workspace }}/build/host_tools"
           mkdir -p "$HOST_TOOLS"
 
-          # datatoc
-          gcc -O2 -o "$HOST_TOOLS/datatoc" \
-            "$GITROOT/source/blender/datatoc/datatoc.c" -lm
+          # datatoc (renamed from .c to .cc in 4.5)
+          DATATOC_SRC="$GITROOT/source/blender/datatoc/datatoc.cc"
+          if [ ! -f "$DATATOC_SRC" ]; then
+            DATATOC_SRC="$GITROOT/source/blender/datatoc/datatoc.c"
+          fi
+          g++ -O2 -o "$HOST_TOOLS/datatoc" "$DATATOC_SRC" -lm
           echo "datatoc built"
 
           # glsl_preprocess (NEW in 4.5)
@@ -171,22 +174,25 @@ jobs:
           } > "$DNA_GEN_DIR/dna_includes_as_strings.h"
           echo "dna_includes headers generated"
 
+          BLIB="$GITROOT/source/blender/blenlib/intern"
+          GUARD="$GITROOT/intern/guardedalloc/intern"
           CFLAGS="-O2 -I$DNA_INC_DIR -I$GITROOT/source/blender/blenlib \
             -I$GITROOT/intern/atomic -I$GITROOT/intern/guardedalloc -I$DNA_GEN_DIR"
 
-          gcc $CFLAGS -c -o /tmp/ms_main.o  "$DNA_INC_DIR/intern/makesdna.c"
-          gcc $CFLAGS -c -o /tmp/ms_utils.o "$DNA_INC_DIR/intern/dna_utils.c"
-          gcc $CFLAGS -c -o /tmp/ms_asrt.o "$GITROOT/source/blender/blenlib/intern/BLI_assert.c"
-          gcc $CFLAGS -c -o /tmp/ms_ghash.o "$GITROOT/source/blender/blenlib/intern/BLI_ghash.c"
-          gcc $CFLAGS -c -o /tmp/ms_gh2.o  "$GITROOT/source/blender/blenlib/intern/BLI_ghash_utils.c"
-          gcc $CFLAGS -c -o /tmp/ms_mema.o "$GITROOT/source/blender/blenlib/intern/BLI_memarena.c"
-          gcc $CFLAGS -c -o /tmp/ms_memp.o "$GITROOT/source/blender/blenlib/intern/BLI_mempool.c"
-          gcc $CFLAGS -c -o /tmp/ms_hash.o "$GITROOT/source/blender/blenlib/intern/hash_mm2a.c"
-          gcc $CFLAGS -c -o /tmp/ms_ml1.o "$GITROOT/intern/guardedalloc/intern/mallocn.c"
-          gcc $CFLAGS -c -o /tmp/ms_ml2.o "$GITROOT/intern/guardedalloc/intern/mallocn_guarded_impl.c"
-          gcc $CFLAGS -c -o /tmp/ms_ml3.o "$GITROOT/intern/guardedalloc/intern/mallocn_lockfree_impl.c"
-          g++ $CFLAGS -c -o /tmp/ms_leak.o "$GITROOT/intern/guardedalloc/intern/leak_detector.cc"
-          g++ $CFLAGS -c -o /tmp/ms_mem.o  "$GITROOT/intern/guardedalloc/intern/memory_usage.cc"
+          # 4.5 uses .cc for everything
+          g++ $CFLAGS -c -o /tmp/ms_main.o  "$DNA_INC_DIR/intern/makesdna.cc"
+          g++ $CFLAGS -c -o /tmp/ms_utils.o "$DNA_INC_DIR/intern/dna_utils.cc"
+          g++ $CFLAGS -c -o /tmp/ms_asrt.o "$BLIB/BLI_assert.cc"
+          g++ $CFLAGS -c -o /tmp/ms_ghash.o "$BLIB/BLI_ghash.cc"
+          g++ $CFLAGS -c -o /tmp/ms_gh2.o  "$BLIB/BLI_ghash_utils.cc"
+          g++ $CFLAGS -c -o /tmp/ms_mema.o "$BLIB/BLI_memarena.cc"
+          g++ $CFLAGS -c -o /tmp/ms_memp.o "$BLIB/BLI_mempool.cc"
+          g++ $CFLAGS -c -o /tmp/ms_hash.o "$BLIB/hash_mm2a.cc"
+          g++ $CFLAGS -c -o /tmp/ms_ml1.o "$GUARD/mallocn.cc"
+          g++ $CFLAGS -c -o /tmp/ms_ml2.o "$GUARD/mallocn_guarded_impl.cc"
+          g++ $CFLAGS -c -o /tmp/ms_ml3.o "$GUARD/mallocn_lockfree_impl.cc"
+          g++ $CFLAGS -c -o /tmp/ms_leak.o "$GUARD/leak_detector.cc"
+          g++ $CFLAGS -c -o /tmp/ms_mem.o  "$GUARD/memory_usage.cc"
 
           g++ -o /tmp/makesdna \
             /tmp/ms_main.o /tmp/ms_utils.o /tmp/ms_asrt.o /tmp/ms_ghash.o \
