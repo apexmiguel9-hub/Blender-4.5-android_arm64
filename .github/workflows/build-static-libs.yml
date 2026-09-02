@@ -130,6 +130,12 @@ jobs:
             -exec sed -i "s|LIBDIR/|${LIBS_ABS}/|g" {} + 2>/dev/null || true
           echo "=== Patching done ==="
 
+          # Patch out freetype brotli check (our precompiled freetype doesn't have it)
+          echo "=== Patching freetype brotli check ==="
+          sed -i 's/function(check_freetype_for_brotli)/function(check_freetype_for_brotli)\n  set(HAVE_BROTLI TRUE CACHE BOOL "")\n  return()/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          echo "=== Freetype brotli check patched ==="
+
       - name: Phase 1 - Build host tools natively
         run: |
           GITROOT="${{ github.workspace }}/blender"
@@ -425,7 +431,14 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DWITH_STRICT_BUILD_OPTIONS=OFF \
-            2>&1 | tail -40
+            2>&1 | tee /tmp/cmake_phase5.log
+          CMAKE_EXIT=$?
+          echo "=== CMake configure exit code: $CMAKE_EXIT ==="
+          tail -20 /tmp/cmake_phase5.log
+          if [ "$CMAKE_EXIT" -ne 0 ]; then
+            echo "ERROR: CMake configure failed"
+            exit 1
+          fi
 
       - name: Patch host tool paths in build.ninja
         run: |
@@ -451,7 +464,7 @@ jobs:
           HOST_DNA_DIR="${{ github.workspace }}/build/host_dna_gen"
           CROSS_DNA_DIR="${{ github.workspace }}/build/source/blender/makesdna/intern"
           mkdir -p "$CROSS_DNA_DIR"
-          for f in "$HOST_DNA_DIR"/*.h "$HOST_DNA_DIR"/*.c; do
+          for f in "$HOST_DNA_DIR"/*.h "$HOST_DNA_DIR"/*.c "$HOST_DNA_DIR"/*.cc; do
             [ -f "$f" ] && cp -v "$f" "$CROSS_DNA_DIR/"
           done
 
@@ -459,7 +472,7 @@ jobs:
           HOST_RNA_DIR="${{ github.workspace }}/build_host/source/blender/makesrna/intern"
           CROSS_RNA_DIR="${{ github.workspace }}/build/source/blender/makesrna/intern"
           mkdir -p "$CROSS_RNA_DIR"
-          for f in "$HOST_RNA_DIR"/*.c "$HOST_RNA_DIR"/*.h; do
+          for f in "$HOST_RNA_DIR"/*.c "$HOST_RNA_DIR"/*.cc "$HOST_RNA_DIR"/*.h; do
             [ -f "$f" ] && cp -v "$f" "$CROSS_RNA_DIR/"
           done
 
