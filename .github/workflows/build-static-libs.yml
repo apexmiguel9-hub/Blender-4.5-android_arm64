@@ -139,6 +139,17 @@ jobs:
             "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
           echo "=== Freetype brotli check patched ==="
 
+          # Make JPEG/PNG/ZLIB/Epoxy not REQUIRED in platform_unix.cmake (host build doesn't need them)
+          sed -i 's/find_package_wrapper(JPEG REQUIRED)/find_package_wrapper(JPEG)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          sed -i 's/find_package_wrapper(PNG REQUIRED)/find_package_wrapper(PNG)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          sed -i 's/find_package_wrapper(ZLIB REQUIRED)/find_package_wrapper(ZLIB)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          sed -i 's/find_package_wrapper(Epoxy REQUIRED)/find_package_wrapper(Epoxy)/' \
+            "${{ github.workspace }}/blender/build_files/cmake/platform/platform_unix.cmake"
+          echo "=== REQUIRED removed from host cmake deps ==="
+
       - name: Phase 1 - Build host tools natively
         run: |
           GITROOT="${{ github.workspace }}/blender"
@@ -260,6 +271,7 @@ jobs:
             -DWITH_NANOVDB=OFF \
             -DWITH_ALEMBIC=OFF \
             -DWITH_USD=OFF \
+            -DWITH_MATERIALX=OFF \
             -DWITH_CYCLES=OFF \
             -DWITH_TBB=OFF \
             -DWITH_OPENIMAGEDENOISE=OFF \
@@ -286,8 +298,8 @@ jobs:
             -DWITH_LZO=OFF \
             -DWITH_LLVM=OFF \
             -DWITH_INSTALL_PORTABLE=ON \
-            2>&1 | tail -30
-          echo "Native CMake configured"
+            2>&1 | tee /tmp/cmake_phase3.log
+          echo "Phase 3 cmake exit: $?"
 
       - name: Phase 4 - Build and run makesrna
         run: |
@@ -344,43 +356,8 @@ jobs:
           HOST_TOOLS="${{ github.workspace }}/build/host_tools"
 
           echo "=== LIB_DIR=$LIB_DIR ==="
-          echo "=== Contents: ==="
-          ls -la "$LIB_DIR/" 2>/dev/null || echo "LIB_DIR does not exist!"
-          ls -la "$LIB_DIR/lib/" 2>/dev/null | head -10
-          ls -la "$LIB_DIR/include/" 2>/dev/null | head -10
-
-          # Create per-package structure that cmake expects
-          mkdir -p "$LIB_DIR/jpeg/lib" "$LIB_DIR/jpeg/include"
-          ln -sf "$LIB_DIR/lib/libjpeg.a" "$LIB_DIR/jpeg/lib/" 2>/dev/null || true
-          ln -sf "$LIB_DIR/lib/libturbojpeg.a" "$LIB_DIR/jpeg/lib/" 2>/dev/null || true
-          ln -sf "$LIB_DIR/include/jpeglib.h" "$LIB_DIR/jpeg/include/" 2>/dev/null || true
-          ln -sf "$LIB_DIR/include/jconfig.h" "$LIB_DIR/jpeg/include/" 2>/dev/null || true
-          ln -sf "$LIB_DIR/include/jmorecfg.h" "$LIB_DIR/jpeg/include/" 2>/dev/null || true
-          ln -sf "$LIB_DIR/include/jerror.h" "$LIB_DIR/jpeg/include/" 2>/dev/null || true
-
-          mkdir -p "$LIB_DIR/png/lib" "$LIB_DIR/png/include"
-          ln -sf "$LIB_DIR/lib/libpng16.a" "$LIB_DIR/png/lib/" 2>/dev/null || true
-          for h in png.h pngconf.h; do
-            ln -sf "$LIB_DIR/include/$h" "$LIB_DIR/png/include/" 2>/dev/null || true
-          done
-
-          mkdir -p "$LIB_DIR/zlib/lib" "$LIB_DIR/zlib/include"
-          ln -sf "$LIB_DIR/lib/libz.a" "$LIB_DIR/zlib/lib/" 2>/dev/null || true
-          for h in zconf.h zlib.h; do
-            ln -sf "$LIB_DIR/include/$h" "$LIB_DIR/zlib/include/" 2>/dev/null || true
-          done
-
-          mkdir -p "$LIB_DIR/freetype/lib" "$LIB_DIR/freetype/include"
-          ln -sf "$LIB_DIR/lib/libfreetype.a" "$LIB_DIR/freetype/lib/" 2>/dev/null || true
-          cp -r "$LIB_DIR/include/freetype2" "$LIB_DIR/freetype/include/" 2>/dev/null || true
-
-          mkdir -p "$LIB_DIR/tiff/lib" "$LIB_DIR/tiff/include"
-          ln -sf "$LIB_DIR/lib/libtiff.a" "$LIB_DIR/tiff/lib/" 2>/dev/null || true
-          for h in tiff.h tiffvers.h tiffio.h; do
-            ln -sf "$LIB_DIR/include/$h" "$LIB_DIR/tiff/include/" 2>/dev/null || true
-          done
-
-          echo "=== Symlinks created ==="
+          ls -la "$LIB_DIR/lib/" 2>/dev/null | head -15
+          ls -la "$LIB_DIR/include/" 2>/dev/null | head -15
 
           cmake -S "$GITROOT" -B "${{ github.workspace }}/build" \
             -G "Ninja" \
@@ -395,6 +372,17 @@ jobs:
             -DCMAKE_FIND_ROOT_PATH="$LIB_DIR" \
             -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH \
             -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
+            -DJPEG_LIBRARY="$LIB_DIR/lib/libjpeg.a" \
+            -DJPEG_INCLUDE_DIR="$LIB_DIR/include" \
+            -DPNG_LIBRARY="$LIB_DIR/lib/libpng16.a" \
+            -DPNG_PNG_INCLUDE_DIR="$LIB_DIR/include" \
+            -DZLIB_LIBRARY="$LIB_DIR/lib/libz.a" \
+            -DZLIB_INCLUDE_DIR="$LIB_DIR/include" \
+            -DFREETYPE_LIBRARY="$LIB_DIR/lib/libfreetype.a" \
+            -DFREETYPE_INCLUDE_DIR="$LIB_DIR/include/freetype2" \
+            -DTIFF_LIBRARY="$LIB_DIR/lib/libtiff.a" \
+            -DTIFF_INCLUDE_DIR="$LIB_DIR/include" \
+            -DWITH_LIBS_PRECOMPILED=ON \
             -DDATATOC_EXECUTABLE="$HOST_TOOLS/datatoc" \
             -DGLSL_PREPROCESS_EXECUTABLE="$HOST_TOOLS/glsl_preprocess" \
             -DMAKESDNA_EXECUTABLE="$HOST_TOOLS/makesdna" \
@@ -416,6 +404,7 @@ jobs:
             -DWITH_NANOVDB=OFF \
             -DWITH_ALEMBIC=OFF \
             -DWITH_USD=OFF \
+            -DWITH_MATERIALX=OFF \
             -DWITH_CYCLES=OFF \
             -DWITH_CYCLES_OSL=OFF \
             -DWITH_CYCLES_EMBREE=ON \
